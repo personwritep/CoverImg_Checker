@@ -1,0 +1,290 @@
+// ==UserScript==
+// @name         CoverImg Checker
+// @namespace    http://tampermonkey.net/
+// @version      0.9
+// @description  「記事一覧」の無効なカバー画像を自動チェックする
+// @author       Ameba Blog User
+// @match        https://ameblo.jp/*/entrylist*
+// @run-at        document-start
+// @noframes
+// @grant         none
+// ==/UserScript==
+
+
+
+let retry=0;
+let interval=setInterval(wait_target, 1);
+function wait_target(){
+    retry++;
+    if(retry>100){ // リトライ制限 100回 0.1secまで
+        clearInterval(interval); }
+    let target_b=document.body; // 監視 target
+    if(target_b){
+        clearInterval(interval);
+        env();
+        main(); }}
+
+
+
+function env(){
+    let elm=
+        '<div id="eaoa_menu">'+
+        '<span id="retoucha">再編集</span> '+
+        '<style>#eaoa_menu { position: absolute; z-index: 20; '+
+        'font: normal 14px Meiryo; color: #333; padding: 3px 10px 1px; '+
+        'border: 1px solid #dadce0; background: #fff; cursor: default; '+
+        'box-shadow: 4px 4px 2px -2px rgba(0, 0, 0, 0.48); display: none; } '+
+        '#eaoa_menu span { padding: 1px 4px 0; } '+
+        '#eaoa_menu span:hover { color: #fff; background: #2196f3; }</style>'+
+        '</div>'+
+
+        '<div id="cic_menu">'+
+        '<input id="end_out" type="submit" value="Exit　⏏">'+
+        '<input id="cc_help" type="submit" value="?">'+
+        '<input id="wait_time" type="number" min="1" max="9">'+
+        '<span id="sec_a">Speed</span>'+
+        '<span id="sec_b">sec</span>'+
+        '<span class="key">Space：Stop・Go</span>'+
+        '<span class="key">　⇨：Next Page</span>'+
+        '<span class="key">　⇦：Back Page</span>'+
+        '<style>#cic_menu { display: flex; flex-wrap: wrap; '+
+        'position: fixed; top: 30px; left: calc(50% + 425px); '+
+        'color: #000; background: #fff; width: 140px; font: 16px Meiryo; '+
+        'border: 1px solid #2196f3; padding: 4px; } '+
+        '#end_out { margin-bottom: 4px; padding: 4px 0 2px; flex-grow: 1; } '+
+        '#cc_help { width: 24px; height: 24px; margin: 5px 2px 0 8px; '+
+        'padding: 1px 6px; border-radius: 20px; border: 1px solid #666; } '+
+        '#wait_time { padding: 4px 4px 2px 70px; margin-bottom: 8px; width: 62px; } '+
+        '#sec_a { position: absolute; top: 48px; left: 16px; } '+
+        '#sec_b { position: absolute; top: 48px; right:32px; } '+
+        '.key { padding: 2px 0; text-align: center; }</style>'+
+        '</div>'+
+
+        '<style id="cic_style">'+
+        '[data-uranus-layout="archive"] { margin: 0; padding:0 !important; } '+
+        '[data-uranus-component="archiveNavTab"] { '+
+        'height: 32px; line-height: 32px; } '+
+        '[data-uranus-layout="archiveBody"] { '+
+        'padding: 15px 30px 60px 30px; height: 820px; background: #b5d3e2; } '+
+        '[data-uranus-component="archiveList"]>li { '+
+        'height: 32px; padding: 4px 8px; background: #fff; } '+
+        '[data-uranus-component="entryItemFeedback"], '+
+        '[data-uranus-component="entryItemTheme"] { display: none; } '+
+        '[data-uranus-component="entryItemImage"], '+
+        '[data-uranus-component="imageFrame"] img { background: #eee; '+
+        'height: 32px !important; display: initial !important; font-size: 0 !important; } '+
+
+        '[data-uranus-component="entryItemTitle"] { overflow: hidden; '+
+        'font-size: 16px; color: #000; height: 21px; margin: 0 0 -5px; } '+
+        '[data-uranus-component="entryItemMeta"] { '+
+        'min-height: unset; height: 20px; } '+
+        '[data-uranus-component="entryItemDatetime"] { '+
+        'margin-bottom: -2px; } '+
+        '[data-uranus-component="archiveFooter"] { '+
+        'position: absolute; bottom: 6px; padding: 0; width: 760px; } '+
+        '[data-uranus-component="pagination"] { '+
+        'margin-top: 10px; padding: 4px; } '+
+        '[data-uranus-component="pagination"] li { '+
+        'font-size: 16px; line-height: 32px; } '+
+        '[data-uranus-component="pagination"] li a { height: 30px; } '+
+
+        'html { overflow: hidden; } '+
+        '#main { position: absolute; top: 0; left: calc(50% - 420px); '+
+        'width: 840px; height: 925px; padding: 0; font-family: Meiryo; '+
+        'background: #b5d3e2; box-shadow: 0 0 0 200vw #d2e0e6; } '+
+        '#ambHeader, .skin-bgHeader, .skin-blogHeaderNav, '+
+        '#subA, .skin-blogSubB, .skin-blogFooterNav { display: none; } '+
+        'div[id^="div-gpt-ad"] { display: none; } '+
+        '#app> :not(.skin-page) { display: none; } '+
+        '</style>';
+
+    if(document.body && !document.querySelector('#cic_menu')){
+        document.body.insertAdjacentHTML('beforeend', elm); }
+
+} // elm()
+
+
+
+function main(){
+    let stop_next=sessionStorage.getItem('cic_stop'); // 自動実行の進行フラグ
+    if(!stop_next){
+        stop_next=0; }
+    sessionStorage.setItem('cic_stop', stop_next); // ストレージ記入
+
+    stop_disp();
+
+
+
+    let wait_sec;
+    let wait_time=document.querySelector('#wait_time');
+    if(wait_time){
+        wait_sec=sessionStorage.getItem('cic_wait')*1000;
+        if(!wait_sec){
+            wait_sec=4000; }
+        wait_time.value=wait_sec/1000;
+
+        wait_time.onchange=function(){
+            sessionStorage.setItem('cic_wait', wait_time.value); }} // ストレージ記入
+
+
+
+    document.addEventListener('keydown', function(event){ //「Space」で停止
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if(event.keyCode==32){
+            if(stop_next==0){
+                stop_next=1;
+                sessionStorage.setItem('cic_stop', stop_next); // ストレージ記入
+                stop_disp(); }
+            else{
+                stop_next=0;
+                sessionStorage.setItem('cic_stop', stop_next); // ストレージ記入
+                stop_disp();
+                location.reload(false); }} // ページをリロード
+        else if(event.keyCode==39){
+            next_(); }
+        else if(event.keyCode==37){
+            pre_(); }
+    }, false);
+
+
+    let n=0;
+    setTimeout(()=>{
+        if(img_check()==20){
+            next_open();
+            main(); }
+        else {
+            stop_next=1;
+            sessionStorage.setItem('cic_stop', stop_next); // ストレージ記入
+            stop_disp(); }
+    }, wait_sec); // カバー画像の読込み待ち時間の調節 🔴
+
+
+
+    function alert_it(){
+        alert(
+            "カバー画像の欠落した記事があります ➔ 次の❶❷の処理をしてください\n"+
+            "❶ 赤枠の記事を右クリック ➔ 再編集をして、カバー画像を修正する\n"+
+            "❷ カバー画像を修正しない場合\n"+
+            "　「⇨」「⇦」で別ページに移動し「Space」でチェック処理を再開する"); }
+
+
+
+    function img_check(){
+        let check=0;
+        let stop=0;
+        let imgFrame=
+            document.querySelectorAll('[data-uranus-component="imageFrame"]');
+        for(let k=0; k<imgFrame.length; k++){
+            let img=imgFrame[k].querySelector('img');
+            if(!img){
+                check+=1; }
+            else{
+                let img_width=img.getBoundingClientRect().width;
+                if(img_width==100){
+                    check+=1; }
+                else{
+                    stop=1;
+                    stop_next=1;
+                    sessionStorage.setItem('cic_stop', stop_next); // ストレージ記入
+                    stop_disp();
+                    let li=img.closest('.skin-borderQuiet');
+                    li.style.outline='2px solid red'; }}}
+
+        if(stop==1){
+            setTimeout(()=>{
+                alert_it(); }, 200); }
+
+        return check; } // img_check()
+
+
+
+    function next_open(){
+        let next_button=document.querySelector('.js-paginationNext');
+        if(next_button && next_button.classList.contains('is-disabled')!=true){
+            let stop_next=sessionStorage.getItem('cic_stop'); // 自動実行の進行フラグ
+            if(stop_next==0){
+                next_button.click(); }}} //「⇨」を押す（部分読込み）
+
+
+    function next_(){
+        let next_button=document.querySelector('.js-paginationNext');
+        if(next_button && next_button.classList.contains('is-disabled')!=true){
+            next_button.click(); }} //「⇨」を押す（部分読込み）
+
+
+    function pre_(){
+        let pre_button=document.querySelector('.js-paginationPrev');
+        if(pre_button && pre_button.classList.contains('is-disabled')!=true){
+            pre_button.click(); }} //「⇦」を押す（部分読込み）
+
+
+    let end_out=document.querySelector('#end_out');
+    if(end_out){
+        end_out.onclick=function(){
+            let blog_url=location.href;
+            blog_url=blog_url.substring(0, blog_url.indexOf('entrylist'));
+            window.location.href=blog_url; }}
+
+
+
+    function stop_disp(){
+        let base=
+            document.querySelector('[data-uranus-layout="archiveBody"]');
+        if(base){
+            if(stop_next==0){
+                base.style.background=''; }
+            else{
+                base.style.background='#2196f3'; }}
+
+        retuch();
+        help(); }
+
+
+
+    function retuch(){
+
+        let ac_list=document.querySelectorAll('.skin-borderQuiet');
+        for(let k=0; k<ac_list.length; k++){
+            ac_list[k].setAttribute("onclick", 'return false;'); // 左クリック抑止
+            ac_list[k].setAttribute("oncontextmenu", 'return false;'); // 右クリック抑止
+            ac_list[k].addEventListener('contextmenu', function(e){ // 右クリック専用メニュー表示
+                menu_disp(e, ac_list[k]); }); }
+
+        function menu_disp(event, target){
+            document.getElementById('eaoa_menu').style.display="block";
+            document.getElementById('eaoa_menu').style.left=event.pageX+"px";
+            document.getElementById('eaoa_menu').style.top=event.pageY+"px";
+            retouch_item(target); }
+
+        document.addEventListener('click', function(){
+            document.getElementById('eaoa_menu').style.display="none"; // 専用メニュー抑止
+            let ac_list=document.querySelectorAll('.skin-borderQuiet');
+            for(let k=0; k<ac_list.length; k++){
+                ac_list[k].setAttribute("onContextmenu", 'return false;'); }}); // コンテキスト抑止
+
+        function retouch_item(target){
+            let retouch=document.getElementById('retoucha');
+            retouch.onclick=function(){
+                let title_link=target.querySelector('h2 a');
+                let entry_id_a=title_link.getAttribute('href').split('entry-');
+                if(entry_id_a[1]){
+                    let entry_id=entry_id_a[1].slice(0, 11);
+                    if(entry_id){
+                        let path=
+                            'https://blog.ameba.jp/ucs/entry/srventryupdateinput.do?id='+entry_id;
+                        window.open(path, "_blank"); }}}}
+
+    } // retuch()
+
+
+
+    function help(){
+        let cc_help=document.querySelector('#cc_help');
+        if(cc_help){
+            cc_help.onclick=function(){
+                let url='https://ameblo.jp/personwritep/entry-12770331516.html';
+                window.open(url, '_blank'); }}}
+
+
+} // main()
